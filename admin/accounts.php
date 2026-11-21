@@ -30,9 +30,9 @@
           <div class="page-eyebrow"><i class="bi bi-people" aria-hidden="true"></i> Administration</div>
           <h1 class="page-title">User Management</h1>
           <p class="page-sub">
-            Create and manage Inventory Staff and Cashier accounts. New staff receive an
-            account-ready email and set their own password through Forgot password. Only Admins
-            can add staff, assign roles and change access.
+            Create and manage Inventory Staff and Cashier accounts. Staff sign in with a username
+            and password; Gmail is optional and can be verified later. Only Admins can add staff,
+            assign roles and change access.
           </p>
         </div>
         <div class="page-actions">
@@ -128,7 +128,7 @@
             <select class="form-select" id="accountStatus" aria-label="Filter by status" style="max-width:180px">
               <option value="">All statuses</option>
               <option value="Active">Active</option>
-              <option value="Pending Activation">Pending Activation</option>
+              <option value="Pending">Pending</option>
               <option value="Inactive">Inactive</option>
             </select>
             <button class="btn btn-outline-app" type="button" id="clearAccountFilters">
@@ -227,11 +227,11 @@
         <form id="accountForm" novalidate>
           <div class="modal-body">
             <div class="alert-app staff-form-note" id="activationNote">
-              <i class="bi bi-envelope-check" aria-hidden="true"></i>
+              <i class="bi bi-shield-check" aria-hidden="true"></i>
               <div>
-                No temporary password. The account is created <strong>Active</strong> and the
-                staff member receives an <strong>account-ready email</strong> with their Employee ID,
-                username and login link. They set their own password through Forgot password.
+                The account starts <strong>Active</strong>. The staff member signs in with the
+                username and password you set here. Gmail is optional and can be verified later
+                from their profile.
               </div>
             </div>
 
@@ -241,7 +241,7 @@
                 <span class="form-section__icon"><i class="bi bi-person-vcard" aria-hidden="true"></i></span>
                 <div>
                   <h3 id="personalSectionTitle">Personal information</h3>
-                  <p>Who the account belongs to, their contact number and the email they will use.</p>
+                  <p>Who the account belongs to and their contact details.</p>
                 </div>
               </div>
               <div class="row g-3">
@@ -257,10 +257,10 @@
                   <div class="form-text">Contact number shown in the team directory.</div>
                 </div>
                 <div class="col-12 col-md-6">
-                  <label class="form-label" for="accountEmail">Staff email (Gmail) <span class="req">*</span></label>
-                  <input class="form-control" id="accountEmail" type="email" placeholder="name@gmail.com" autocomplete="email" required>
-                  <div class="invalid-feedback">Enter a valid, unique email address.</div>
-                  <div class="form-text">Use the email the staff member will actually check. Account-ready notifications and password recovery codes go here.</div>
+                  <label class="form-label" for="accountEmail">Staff Gmail <span class="opt">Optional</span></label>
+                  <input class="form-control" id="accountEmail" type="email" pattern="[^@\s]+@gmail\.com" placeholder="name@gmail.com" autocomplete="email">
+                  <div class="invalid-feedback">Enter a valid Gmail address ending in @gmail.com.</div>
+                  <div class="form-text">Gmail must be verified by the staff member before it can be used for password recovery.</div>
                 </div>
               </div>
             </section>
@@ -289,6 +289,12 @@
                   <div class="invalid-feedback">Enter a unique username (letters, numbers, dots, dashes, underscores).</div>
                   <div class="form-text">Used with the password on the sign-in page.</div>
                 </div>
+                <div class="col-12 col-md-6" id="accountPasswordWrap">
+                  <label class="form-label" for="accountPassword">Initial password <span class="req">*</span></label>
+                  <input class="form-control" id="accountPassword" type="password" autocomplete="new-password" minlength="10" maxlength="128" pattern="(?=.*[a-z])(?=.*[A-Z])(?=.*[0-9]).{10,128}" required>
+                  <div class="invalid-feedback">Use at least 10 characters with an uppercase letter, a lowercase letter, and a number.</div>
+                  <div class="form-text">The password is stored as a secure hash. Share it with the staff member privately.</div>
+                </div>
                 <div class="col-12 col-md-6">
                   <label class="form-label" for="accountRoleInput">Role <span class="req">*</span></label>
                   <select class="form-select" id="accountRoleInput" required>
@@ -297,6 +303,15 @@
                     <option value="Admin" hidden>Admin</option>
                   </select>
                   <div class="form-text" id="roleHelp">Inventory staff can receive and release stock.</div>
+                </div>
+                <div class="col-12 col-md-6">
+                  <label class="form-label" for="accountStatusInput">Account status <span class="req">*</span></label>
+                  <select class="form-select" id="accountStatusInput" required>
+                    <option value="active">Active</option>
+                    <option value="pending">Pending</option>
+                    <option value="inactive">Inactive</option>
+                  </select>
+                  <div class="form-text">Pending and inactive accounts cannot sign in until activated.</div>
                 </div>
               </div>
             </section>

@@ -279,7 +279,7 @@ final class StaffActivationService
 
             $changed = Database::execute(
                 "UPDATE employees
-                 SET password_hash = ?, status = ?, must_change_password = 0,
+                 SET password_hash = ?, status = ?, email_verified = 1, must_change_password = 0,
                      temp_password_expires_at = NULL, password_changed_at = NOW(),
                      failed_login_count = 0, locked_until = NULL
                  WHERE id = ? AND status = 'pending'",

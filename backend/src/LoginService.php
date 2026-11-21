@@ -24,7 +24,7 @@ final class LoginService
         $identifier = trim($identifier);
 
         if ($identifier === '' || $password === '') {
-            return ['error' => 'Enter your username or email and password.'];
+            return ['error' => 'Enter your username and password.'];
         }
 
         $wait = Auth::tooManyAttempts();
@@ -46,9 +46,9 @@ final class LoginService
 
         $employee = Database::fetchOne(
             'SELECT * FROM employees
-             WHERE username = ? OR employee_id = ? OR email = ?
+             WHERE username = ? OR employee_id = ?
              LIMIT 1',
-            [strtolower($identifier), strtoupper($identifier), strtolower($identifier)],
+            [strtolower($identifier), strtoupper($identifier)],
         );
 
         if ($employee) {
@@ -56,8 +56,8 @@ final class LoginService
         }
 
         Auth::recordLoginFailure();
-        Auth::audit(null, 'Sign-in Failed', 'An unknown username, email or employee ID was used.');
-        return ['error' => 'Incorrect username/email or password. Please try again.'];
+        Auth::audit(null, 'Sign-in Failed', 'An unknown username or employee ID was used.');
+        return ['error' => 'Incorrect username or password. Please try again.'];
     }
 
     /**
@@ -82,7 +82,7 @@ final class LoginService
 
         if (!password_verify($password, (string) $row['password_hash'])) {
             self::recordFailure($table, $id, $row, $type);
-            return ['error' => 'Incorrect username/email or password. Please try again.'];
+            return ['error' => 'Incorrect username or password. Please try again.'];
         }
 
         if ($type === 'employee' && !empty($row['deleted_at'])) {
@@ -100,16 +100,16 @@ final class LoginService
             $status = (string) ($row['status'] ?? '');
             Auth::audit(
                 Users::mapEmployee($row),
-                $status === 'pending' ? 'Sign-in Blocked - Pending Activation' : 'Sign-in Blocked',
+                $status === 'pending' ? 'Sign-in Blocked - Pending' : 'Sign-in Blocked',
                 $status === 'pending'
-                    ? 'A staff account awaiting email activation attempted to sign in.'
+                    ? 'A pending staff account attempted to sign in.'
                     : 'A deactivated employee account attempted to sign in.',
                 (string) $row['employee_id'],
             );
 
             return [
                 'error' => $status === 'pending'
-                    ? 'This account is not activated yet. Open the activation link sent to your work email.'
+                    ? 'This account is pending. Contact the Administrator to activate it.'
                     : 'This account has been deactivated. Contact the Administrator.',
             ];
         }

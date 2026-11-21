@@ -288,7 +288,7 @@
   }
 
   function accountStatus(value) {
-    if (value === "pending") return "Pending Activation";
+    if (value === "pending") return "Pending";
     if (value === "inactive") return "Inactive";
     return "Active";
   }
@@ -303,6 +303,7 @@
       fullName: user.fullName || user.name || "",
       username: user.username || "",
       email: user.email || "",
+      emailVerified: !!user.emailVerified,
       phone: user.contactNumber || "",
       employeeId: user.code || user.employeeId || "",
       role: demoRole(user),
@@ -326,6 +327,7 @@
       employeeId: employee.employeeId || employee.code || "",
       username: employee.username || "",
       email: employee.email || "",
+      emailVerified: !!employee.emailVerified,
       phone: employee.contactNumber || "",
       role: employee.role === "inventory-staff" ? "Inventory Staff" : demoRole(employee),
       dbRole: employee.dbRole || employee.role || "cashier",
@@ -1342,6 +1344,7 @@
       email: values.email || "",
       contactNumber: values.phone || "",
       role: values.role === "Inventory Staff" ? "inventory-staff" : "cashier",
+      status: values.status || "active",
     };
   }
 
@@ -1352,6 +1355,7 @@
     }
 
     var body = accountPayload(values);
+    if (!existing) body.password = values.password || "";
     var result = existing
       ? api("PUT", "/admin/employees/" + existing.dbId, body)
       : api("POST", "/admin/employees", body);
@@ -1521,9 +1525,9 @@
   function saveProfile(values) {
     var body = {
       fullName: values.name,
-      email: values.email || "",
       contactNumber: values.phone || "",
     };
+    if (Object.prototype.hasOwnProperty.call(values, "email")) body.email = values.email || "";
     var result = api("PUT", "/auth/profile", body);
     if (!result.ok) {
       handleUnauthorized(result);
@@ -1531,6 +1535,35 @@
     }
     if (result.data.user) currentUser = mapUser(result.data.user);
     return { ok: true };
+  }
+
+  function getStaffEmailVerification() {
+    var result = api("GET", "/auth/email-verification");
+    if (!result.ok) {
+      handleUnauthorized(result);
+      return { ok: false, message: result.message, verification: null };
+    }
+    return { ok: true, verification: result.data.verification || null };
+  }
+
+  function requestStaffEmailVerification(email) {
+    var result = api("POST", "/auth/email-verification/request", { email: email || "" });
+    if (!result.ok) {
+      handleUnauthorized(result);
+      return { ok: false, message: result.message };
+    }
+    return result.data.result || { ok: true };
+  }
+
+  function verifyStaffEmail(code) {
+    var result = api("POST", "/auth/email-verification/verify", { code: code || "" });
+    if (!result.ok) {
+      handleUnauthorized(result);
+      return { ok: false, message: result.message };
+    }
+    setToken(result.data.csrfToken, false);
+    currentUser = mapUser(result.data.user);
+    return { ok: true, user: currentUser, verification: result.data.verification || null };
   }
 
   function saveSettings(values) {
@@ -1823,6 +1856,9 @@
     dismissResetRequest: dismissResetRequest,
 
     saveProfile: saveProfile,
+    getStaffEmailVerification: getStaffEmailVerification,
+    requestStaffEmailVerification: requestStaffEmailVerification,
+    verifyStaffEmail: verifyStaffEmail,
     saveSettings: saveSettings,
     saveGcashQr: saveGcashQr,
     saveNotifications: saveNotifications,

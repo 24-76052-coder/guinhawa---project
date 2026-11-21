@@ -177,20 +177,21 @@ final class AccountService
     }
 
     /**
-     * Create an active staff account and email the staff member a notification
-     * that the account is ready. No password is chosen by the Admin: the
-     * account starts with an unusable random hash, and the staff member sets
-     * their own password through the Forgot password page.
+     * Create an active staff account. The password is hashed before storage;
+     * an optional Gmail address remains unverified until the staff member
+     * completes the verification flow in their profile.
      *
-     * @return array{account: array, notification: array}
+     * @return array{account: array}
      */
     public static function createEmployee(array $input, array $actor): array
     {
         $fullName = Validator::text($input['fullName'] ?? '', 'Full name', 1, 160);
         $username = Validator::username($input['username'] ?? '');
-        $email = Validator::email($input['email'] ?? '', true);
+        $email = Validator::gmail($input['email'] ?? '', false);
+        $password = Validator::password($input['password'] ?? '', 'Password');
         $contact = Validator::contact($input['contactNumber'] ?? ($input['phone'] ?? ''));
         $role = Validator::staffRole($input['role'] ?? '');
+        $status = Validator::status($input['status'] ?? 'active');
         $dateJoined = date('Y-m-d');
 
         self::assertIdentityAvailable($username, $email);
@@ -199,8 +200,10 @@ final class AccountService
             $fullName,
             $username,
             $email,
+            $password,
             $contact,
             $role,
+            $status,
             $dateJoined,
             $actor,
         ): string {
@@ -219,10 +222,8 @@ final class AccountService
                     $contact,
                     $role,
                     $dateJoined,
-                    'active',
-                    // No-one knows this random hash. The staff member sets their
-                    // own password through the Forgot password page.
-                    password_hash(bin2hex(random_bytes(32)), PASSWORD_DEFAULT),
+                    $status,
+                    password_hash($password, PASSWORD_DEFAULT),
                     (string) ($actor['code'] ?? 'ADMIN-01'),
                 ],
             );
@@ -236,17 +237,12 @@ final class AccountService
         Auth::audit(
             $actor,
             'Employee Account Created',
-            "{$fullName} ({$employeeId}) created as {$mapped['roleLabel']} and set to Active.",
+            "{$fullName} ({$employeeId}) created as {$mapped['roleLabel']} and set to {$mapped['status']} with direct username and password sign-in.",
             $employeeId,
         );
 
-        $notification = StaffActivationService::sendAccountReady((int) $created['id'], $actor);
-
-        $fresh = Database::fetchOne('SELECT * FROM employees WHERE id = ? LIMIT 1', [(int) $created['id']]);
-
         return [
-            'account' => Users::mapEmployee($fresh),
-            'notification' => $notification,
+            'account' => $mapped,
         ];
     }
 
@@ -255,24 +251,53 @@ final class AccountService
         $current = self::findEmployee($id);
         $fullName = Validator::text($input['fullName'] ?? '', 'Full name', 1, 160);
         $username = Validator::username($input['username'] ?? '');
-        $email = Validator::email($input['email'] ?? '', true);
+        $email = Validator::gmail($input['email'] ?? ($current['email'] ?? ''), false);
         $role = Validator::staffRole($input['role'] ?? '');
         $contact = Validator::contact($input['contactNumber'] ?? ($input['phone'] ?? ($current['contact_number'] ?? '')));
-        // A pending invitation can only be activated through its emailed link.
-        $status = ($current['status'] ?? '') === 'pending'
-            ? 'pending'
-            : Validator::status($input['status'] ?? ($current['status'] ?? 'active'));
+        $status = Validator::status($input['status'] ?? ($current['status'] ?? 'active'));
 
         self::assertIdentityAvailable($username, $email, $id);
 
         Database::execute(
             'UPDATE employees
-             SET full_name = ?, username = ?, email = ?, contact_number = ?, role = ?, status = ?
+             SET full_name = ?, username = ?, email = ?, email_verified = ?, contact_number = ?, role = ?, status = ?
              WHERE id = ?',
-            [$fullName, $username, $email, $contact, $role, $status, $id],
+            [
+                $fullName,
+                $username,
+                $email,
+                strcasecmp((string) ($current['email'] ?? ''), (string) ($email ?? '')) === 0
+                    ? (int) ($current['email_verified'] ?? 0)
+                    : 0,
+                $contact,
+                $role,
+                $status,
+                $id,
+            ],
         );
 
-        if ($status === 'inactive' && $current['status'] === 'active') {
+        if (strcasecmp((string) ($current['email'] ?? ''), (string) ($email ?? '')) !== 0) {
+            Database::execute('DELETE FROM staff_email_verifications WHERE employee_id = ?', [$id]);
+            Database::execute(
+                "UPDATE password_reset_requests SET consumed_at = NOW()
+                 WHERE user_type = 'employee' AND user_id = ? AND channel = 'email'
+                   AND consumed_at IS NULL AND reset_completed_at IS NULL",
+                [$id],
+            );
+            Database::execute(
+                'UPDATE account_activation_tokens SET used_at = NOW() WHERE employee_id = ? AND used_at IS NULL',
+                [$id],
+            );
+        }
+
+        if ($status !== 'pending') {
+            Database::execute(
+                'UPDATE account_activation_tokens SET used_at = NOW() WHERE employee_id = ? AND used_at IS NULL',
+                [$id],
+            );
+        }
+
+        if ($status !== 'active' && $current['status'] === 'active') {
             Auth::invalidateSessions('employee', $id);
         }
 
@@ -293,32 +318,33 @@ final class AccountService
         $current = self::findEmployee($id);
         $status = Validator::status($status);
 
-        if (($current['status'] ?? '') === 'pending') {
-            throw new HttpException(
-                'This account is waiting for email activation. Resend the activation link instead.',
-                409,
-                'NOT_PENDING',
-            );
-        }
-
         if ($current['status'] === $status) {
             return Users::mapEmployee($current);
         }
 
         Database::execute('UPDATE employees SET status = ? WHERE id = ?', [$status, $id]);
 
-        if ($status === 'inactive') {
+        if ($status !== 'active') {
             Auth::invalidateSessions('employee', $id);
         }
 
         $updated = Database::fetchOne('SELECT * FROM employees WHERE id = ? LIMIT 1', [$id]);
         Auth::audit(
             $actor,
-            $status === 'active' ? 'Employee Account Reactivated' : 'Employee Account Deactivated',
+            $status === 'active'
+                ? 'Employee Account Reactivated'
+                : ($status === 'pending' ? 'Employee Account Set Pending' : 'Employee Account Deactivated'),
             "{$updated['full_name']} ({$updated['employee_id']}) was " .
-                ($status === 'active' ? 'reactivated' : 'deactivated') . '.',
+                ($status === 'active' ? 'reactivated' : ($status === 'pending' ? 'set to Pending' : 'deactivated')) . '.',
             (string) $updated['employee_id'],
         );
+
+        if ($status !== 'pending') {
+            Database::execute(
+                'UPDATE account_activation_tokens SET used_at = NOW() WHERE employee_id = ? AND used_at IS NULL',
+                [$id],
+            );
+        }
 
         return Users::mapEmployee($updated);
     }
@@ -486,12 +512,15 @@ final class AccountService
         return $user['type'] === 'admin' ? Users::mapAdmin($fresh) : Users::mapEmployee($fresh);
     }
 
-    public static function assertIdentityAvailable(string $username, string $email, ?int $exceptEmployeeId = null): void
+    public static function assertIdentityAvailable(string $username, ?string $email, ?int $exceptEmployeeId = null): void
     {
-        $admin = Database::fetchOne(
-            'SELECT id, username, email FROM admin WHERE username = ? OR email = ? LIMIT 1',
-            [$username, $email],
-        );
+        $sql = 'SELECT id, username, email FROM admin WHERE username = ?';
+        $params = [$username];
+        if ($email !== null) {
+            $sql .= ' OR email = ?';
+            $params[] = $email;
+        }
+        $admin = Database::fetchOne($sql . ' LIMIT 1', $params);
         if ($admin) {
             if (strcasecmp((string) $admin['username'], $username) === 0) {
                 throw new HttpException('That username is already in use.', 409, 'CONFLICT');
@@ -499,8 +528,12 @@ final class AccountService
             throw new HttpException('That email address is already in use.', 409, 'CONFLICT');
         }
 
-        $params = [$username, $email];
-        $sql = 'SELECT id, username, email, deleted_at FROM employees WHERE (username = ? OR email = ?)';
+        $params = [$username];
+        $sql = 'SELECT id, username, email, deleted_at FROM employees WHERE username = ?';
+        if ($email !== null) {
+            $sql = 'SELECT id, username, email, deleted_at FROM employees WHERE (username = ? OR email = ?)';
+            $params[] = $email;
+        }
         if ($exceptEmployeeId !== null) {
             $sql .= ' AND id <> ?';
             $params[] = $exceptEmployeeId;

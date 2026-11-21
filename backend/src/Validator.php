@@ -7,7 +7,7 @@ namespace Guinhawa;
 final class Validator
 {
     public const STAFF_ROLES = ['inventory-staff', 'cashier', 'counter-staff', 'staff'];
-    public const STATUSES = ['active', 'inactive'];
+    public const STATUSES = ['active', 'inactive', 'pending'];
     public const UNITS = [
         'Kilograms', 'Sacks', 'Bags', 'Pieces', 'Tablets', 'Bottles',
         'Boxes', 'Cans', 'Pouches', 'Packs', 'Units', 'Trays', 'Heads',
@@ -63,6 +63,15 @@ final class Validator
             throw new HttpException('Please enter a valid email address.', 422, 'VALIDATION');
         }
         return $clean;
+    }
+
+    public static function gmail(mixed $value, bool $required = false): ?string
+    {
+        $email = self::email($value, $required);
+        if ($email !== null && !preg_match('/^[^@]+@gmail\.com$/i', $email)) {
+            throw new HttpException('Enter a Gmail address ending in @gmail.com.', 422, 'VALIDATION');
+        }
+        return $email;
     }
 
     public static function contact(mixed $value): ?string
@@ -132,7 +141,7 @@ final class Validator
     {
         $clean = strtolower(trim((string) ($value ?? '')));
         if (!in_array($clean, self::STATUSES, true)) {
-            throw new HttpException('Account status must be Active or Inactive.', 422, 'VALIDATION');
+            throw new HttpException('Account status must be Active, Inactive, or Pending.', 422, 'VALIDATION');
         }
         return $clean;
     }

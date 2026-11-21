@@ -20,7 +20,7 @@ final class EmployeeController
     {
         Auth::requireUser();
         $rows = Database::fetchAll(
-            "SELECT id, employee_id, username, full_name, email, contact_number, avatar, role, status,
+            "SELECT id, employee_id, username, full_name, email, email_verified, contact_number, avatar, role, status,
                     must_change_password, temp_password_expires_at, last_login_at, created_at, updated_at
              FROM employees
              WHERE status = 'active' AND deleted_at IS NULL
@@ -61,7 +61,7 @@ final class EmployeeController
         }
 
         $rows = Database::fetchAll(
-            'SELECT id, employee_id, username, full_name, email, contact_number, avatar, role,
+            'SELECT id, employee_id, username, full_name, email, email_verified, contact_number, avatar, role,
                     date_joined, status, must_change_password, temp_password_expires_at, last_login_at, created_at, updated_at
              FROM employees
              WHERE ' . implode(' AND ', $where) . "
@@ -84,10 +84,7 @@ final class EmployeeController
 
         Http::json([
             'account' => $result['account'],
-            'notification' => $result['notification'],
-            'message' => $result['notification']['sent']
-                ? 'Account created. A notification email was sent to ' . $result['notification']['email'] . '.'
-                : 'Account created, but the notification email could not be sent.',
+            'message' => 'Staff account created. Share the username and initial password with the staff member securely.',
         ], 201);
     }
 

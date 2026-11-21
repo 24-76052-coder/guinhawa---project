@@ -187,7 +187,7 @@ if (\Guinhawa\Auth::user()) {
       <div class="login-card__intro">
         <h1 class="login-card__title" id="signin-title">Sign in</h1>
         <p class="login-card__subtitle">
-          Enter your username or employee ID and password to continue.
+          Enter your username or employee ID and password to continue. Staff can sign in without Gmail.
         </p>
       </div>
 

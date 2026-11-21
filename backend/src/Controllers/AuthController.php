@@ -12,6 +12,7 @@ use Guinhawa\HttpException;
 use Guinhawa\LoginService;
 use Guinhawa\RecoveryService;
 use Guinhawa\StaffActivationService;
+use Guinhawa\StaffEmailVerificationService;
 use Guinhawa\StaffRecoveryService;
 use Guinhawa\Users;
 use Guinhawa\Validator;
@@ -29,7 +30,7 @@ final class AuthController
         if (!isset($result['user'])) {
             $limited = isset($result['retry_after']);
             throw new HttpException(
-                (string) ($result['error'] ?? 'Incorrect username/email or password.'),
+                (string) ($result['error'] ?? 'Incorrect username or password.'),
                 $limited ? 429 : 401,
                 $limited ? 'RATE_LIMITED' : 'BAD_CREDENTIALS',
             );
@@ -91,16 +92,10 @@ final class AuthController
         }
 
         if (array_key_exists('email', $body)) {
-            $email = Validator::email($body['email']);
-            if ($table === 'employees' && $email !== null) {
-                $duplicate = Database::fetchOne(
-                    'SELECT id FROM employees WHERE email = ? AND id <> ? LIMIT 1',
-                    [$email, $id],
-                );
-                if ($duplicate) {
-                    throw new HttpException('That email address is already in use.', 409, 'CONFLICT');
-                }
+            if ($table === 'employees') {
+                throw new HttpException('Use Gmail verification in your profile to add or change a staff Gmail address.', 422, 'VERIFICATION_REQUIRED');
             }
+            $email = Validator::email($body['email']);
             $fields[] = 'email = ?';
             $params[] = $email;
         }
@@ -132,6 +127,33 @@ final class AuthController
         $mapped = $user['type'] === 'admin' ? Users::mapAdmin($fresh) : Users::mapEmployee($fresh);
 
         Http::json(['user' => $mapped, 'csrfToken' => Auth::csrfToken()]);
+    }
+
+    public static function staffEmailVerificationStatus(): never
+    {
+        $user = Auth::requireUser(true);
+        Http::json(['verification' => StaffEmailVerificationService::status($user)]);
+    }
+
+    public static function requestStaffEmailVerification(): never
+    {
+        $user = Auth::requireUser(true);
+        $body = Http::body();
+        Http::json([
+            'result' => StaffEmailVerificationService::requestCode($user, $body['email'] ?? ''),
+        ]);
+    }
+
+    public static function verifyStaffEmail(): never
+    {
+        $user = Auth::requireUser(true);
+        $body = Http::body();
+        $result = StaffEmailVerificationService::verifyCode($user, $body['code'] ?? '');
+        Http::json([
+            'user' => $result['user'],
+            'verification' => $result['verification'],
+            'csrfToken' => Auth::csrfToken(),
+        ]);
     }
 
     public static function changePassword(): never

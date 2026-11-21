@@ -220,6 +220,14 @@ final class RecoveryService
             return ['ok' => false, 'error' => 'That code has already been used. Request a new code.'];
         }
 
+        if (($request['user_type'] ?? '') === 'employee') {
+            Database::execute(
+                "UPDATE employees SET email_verified = 1
+                 WHERE id = ? AND email = ? AND status = 'active' AND deleted_at IS NULL",
+                [(int) $request['user_id'], (string) $request['email']],
+            );
+        }
+
         $_SESSION['auth_pwd_reset_token'] = $token;
         $_SESSION['auth_pwd_reset_request_id'] = (int) $request['id'];
 

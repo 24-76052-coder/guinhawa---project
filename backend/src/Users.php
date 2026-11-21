@@ -66,6 +66,7 @@ final class Users
             'name' => $row['full_name'],
             'fullName' => $row['full_name'],
             'email' => $row['email'] ?? '',
+            'emailVerified' => (bool) ($row['email_verified'] ?? false),
             'contactNumber' => $row['contact_number'] ?? '',
             'role' => $role,
             'dbRole' => $dbRole,

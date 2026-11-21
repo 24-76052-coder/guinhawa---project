@@ -148,7 +148,7 @@
           var statusVariant =
             account.status === "Active"
               ? "success"
-              : account.status === "Pending Activation"
+              : account.status === "Pending"
               ? "warning"
               : "neutral";
           var initials = UI.initials(account.name);
@@ -160,11 +160,11 @@
               '<button class="btn btn-icon" type="button" disabled title="Administrator password is managed by the owner" aria-label="Reset password unavailable"><i class="bi bi-key"></i></button> ';
             actions +=
               '<button class="btn btn-icon" type="button" disabled title="Administrator accounts cannot be deactivated" aria-label="Deactivate unavailable"><i class="bi bi-lock"></i></button>';
-          } else if (account.status === "Pending Activation") {
+          } else if (account.status === "Pending") {
             actions +=
-              '<button class="btn btn-icon" type="button" data-resend="' + UI.escape(account.id) + '" title="Resend activation link" aria-label="Resend activation link"><i class="bi bi-send"></i></button> ';
+              '<button class="btn btn-icon btn-icon--success" type="button" data-toggle="' + UI.escape(account.id) + '" title="Activate account" aria-label="Activate account"><i class="bi bi-play"></i></button> ';
             actions +=
-              '<button class="btn btn-icon btn-icon--danger" type="button" data-cancel="' + UI.escape(account.id) + '" title="Cancel invitation" aria-label="Cancel invitation"><i class="bi bi-x-lg"></i></button>';
+              '<button class="btn btn-icon btn-icon--danger" type="button" data-delete="' + UI.escape(account.id) + '" title="Delete staff (kept in archive)" aria-label="Delete staff"><i class="bi bi-trash3"></i></button>';
           } else {
             actions +=
               '<button class="btn btn-icon ' + (account.status === "Active" ? "btn-icon--danger" : "btn-icon--success") + '" type="button" data-toggle="' + UI.escape(account.id) + '" title="' + (account.status === "Active" ? "Deactivate account" : "Activate account") + '" aria-label="' + (account.status === "Active" ? "Deactivate account" : "Activate account") + '"><i class="bi bi-' + (account.status === "Active" ? "pause" : "play") + '"></i></button>';
@@ -179,13 +179,14 @@
             '<span class="avatar ' + UI.avatarClass(account.role) + '">' + UI.escape(initials) + "</span>" +
             "<div>" +
             '<span class="avatar-cell__name">' + UI.escape(account.name) + (protectedRow ? ' <i class="bi bi-patch-check-fill text-app-success" title="Protected account" aria-label="Protected account"></i>' : "") + "</span>" +
-            '<span class="avatar-cell__meta">' + UI.escape(account.email || "\u2014") + "</span>" +
+            '<span class="avatar-cell__meta">' + UI.escape(account.email || "No Gmail added") + "</span>" +
+            '<span class="avatar-cell__meta">' + (account.email ? (account.emailVerified ? '<i class="bi bi-patch-check-fill text-app-success" aria-hidden="true"></i> Gmail verified' : '<i class="bi bi-envelope-exclamation" aria-hidden="true"></i> Gmail not verified') : "") + "</span>" +
             "</div></div></td>" +
             '<td class="text-tabular">' + UI.escape(account.employeeId) + "</td>" +
             '<td class="text-nowrap"><span style="font-family:Consolas,monospace;font-size:.8rem">@' + UI.escape(account.username || "\u2014") + "</span></td>" +
             "<td>" + UI.roleBadge(account.role) + "</td>" +
             '<td class="text-nowrap">' + UI.escape(account.phone || "\u2014") + "</td>" +
-            '<td class="text-nowrap" data-sort-value="' + UI.escape(account.lastActive || "") + '">' + (account.status === "Pending Activation" ? '<span class="text-app-muted">Awaiting activation</span>' : Store.formatDateTime(account.lastActive)) + "</td>" +
+            '<td class="text-nowrap" data-sort-value="' + UI.escape(account.lastActive || "") + '">' + (account.status === "Pending" ? '<span class="text-app-muted">Awaiting activation</span>' : Store.formatDateTime(account.lastActive)) + "</td>" +
             "<td>" + UI.statusBadge(account.status, statusVariant) + "</td>" +
             '<td class="text-end text-nowrap">' + actions + "</td>" +
             "</tr>"
@@ -255,6 +256,8 @@
     var roleSelect = $("accountRoleInput");
     var note = $("activationNote");
     var saveLabel = $("saveAccountLabel");
+    var passwordWrap = $("accountPasswordWrap");
+    var passwordInput = $("accountPassword");
 
     $("accountEmployeeId").readOnly = true;
 
@@ -268,6 +271,10 @@
       $("accountUsername").value = account.username || "";
       $("accountEmail").value = account.email || "";
       $("accountPhone").value = account.phone || "";
+      $("accountStatusInput").value = String(account.status || "Active").toLowerCase();
+      passwordInput.value = "";
+      passwordInput.required = false;
+      passwordWrap.classList.add("d-none");
       roleSelect.value = account.role;
       usernameTouched = true;
       if (note) note.classList.add("d-none");
@@ -285,11 +292,15 @@
       $("accountModalSub").textContent = "Inventory Staff and Cashier accounts only";
       roleSelect.disabled = false;
       roleSelect.value = "Inventory Staff";
+      $("accountStatusInput").value = "active";
       $("accountEmployeeId").value = nextEmployeeId("Inventory Staff");
       $("accountUsername").value = "";
       $("accountName").value = "";
       $("accountEmail").value = "";
       $("accountPhone").value = "";
+      passwordInput.value = "";
+      passwordInput.required = true;
+      passwordWrap.classList.remove("d-none");
       $("roleHelp").textContent = roleHelpText("Inventory Staff");
       if (note) note.classList.remove("d-none");
       if (saveLabel) saveLabel.textContent = "Create staff account";
@@ -303,6 +314,9 @@
     var valid = form.checkValidity();
 
     var email = $("accountEmail").value.trim().toLowerCase();
+    var gmailValid = !email || /^[^@\s]+@gmail\.com$/i.test(email);
+    $("accountEmail").setCustomValidity(gmailValid ? "" : "Enter a Gmail address ending in @gmail.com.");
+    $("accountEmail").classList.toggle("is-invalid", !gmailValid);
     var emailTaken =
       !!email &&
       Store.data.accounts.some(function (account) {
@@ -346,7 +360,7 @@
     }
 
     form.classList.add("was-validated");
-    return valid && !emailTaken && !idTaken && !duplicateUsername;
+    return valid && gmailValid && !emailTaken && !idTaken && !duplicateUsername;
   }
 
   function collectValues() {
@@ -355,8 +369,10 @@
       employeeId: $("accountEmployeeId").value.trim().toUpperCase(),
       username: normalizeUsername($("accountUsername").value),
       email: $("accountEmail").value.trim().toLowerCase(),
+      password: $("accountPassword").value,
       phone: $("accountPhone").value.trim(),
       role: $("accountRoleInput").value,
+      status: $("accountStatusInput").value,
     };
   }
 
@@ -387,9 +403,9 @@
       html:
         "<p class=\"mb-2\">" +
         "<strong>" + htmlEscape(values.name) + "</strong> will be added as a <strong>" +
-        htmlEscape(values.role) + "</strong> (" + htmlEscape(values.employeeId) + ").</p>" +
-        "<p class=\"mb-0\">A notification email with the Employee ID, username and login link " +
-        "will be sent to <strong>" + htmlEscape(values.email) + "</strong>.</p>",
+        htmlEscape(values.role) + "</strong> with status <strong>" + htmlEscape(values.status) + "</strong>.</p>" +
+        "<p class=\"mb-0\">They will sign in with username <strong>@" + htmlEscape(values.username) +
+        "</strong> and the password you set. Gmail is optional.</p>",
       icon: "question",
       confirmText: "Create account",
       cancelText: "Review details",
@@ -402,39 +418,35 @@
         return;
       }
 
+      $("accountPassword").value = "";
       bootstrap.Modal.getOrCreateInstance($("accountModal")).hide();
       renderAll();
-      showAccountReadyResult(values, result.notification || {});
+      values.employeeId = result.account && result.account.employeeId ? result.account.employeeId : values.employeeId;
+      values.status = result.account && result.account.status ? result.account.status : values.status;
+      showAccountCreated(values, result.message || "The staff account is ready to use.");
     });
   }
 
-  function showAccountReadyResult(values, notification) {
-    var email = notification.email || values.email;
-    var sent = notification.sent === true;
+  function showAccountCreated(values, message) {
     var body =
       "<p class=\"mb-2\"><strong>" + htmlEscape(values.name) + "</strong> was created as a <strong>" +
-      htmlEscape(values.role) + "</strong> account and is now <strong>Active</strong>.</p>" +
-      (sent
-        ? "<p class=\"mb-0\">A notification email with the Employee ID, username and login link was sent to <strong>" +
-          htmlEscape(email) + "</strong>. The staff member can sign in, and can use <strong>Forgot password</strong> whenever they need to set or reset their password.</p>"
-        : "<p class=\"mb-0\">The account is ready, but the notification email could not be sent. Configure Gmail in <strong>Settings &gt; Email delivery</strong>. " +
-          "Give the staff member their Employee ID (<strong>" + htmlEscape(values.employeeId) +
-          "</strong>) and username (<strong>@" + htmlEscape(values.username) + "</strong>), and ask them to use " +
-          "<strong>Forgot password</strong> on the login page once email delivery is configured.</p>");
+      htmlEscape(values.role) + "</strong> account and is <strong>" + htmlEscape(values.status) + "</strong>.</p>" +
+      "<p class=\"mb-2\">Staff ID: <strong>" + htmlEscape(values.employeeId) + "</strong><br>Username: <strong>@" +
+      htmlEscape(values.username) + "</strong></p>" +
+      "<p class=\"mb-0\">" + htmlEscape(message) + (values.email
+        ? " Gmail <strong>" + htmlEscape(values.email) + "</strong> is not verified yet; the staff member can verify it from their profile."
+        : " They can add and verify Gmail later from their profile.") + "</p>";
 
     if (hasSwal()) {
       window.Swal.fire({
-        icon: sent ? "success" : "warning",
-        title: sent ? "Account created" : "Account created, email not sent",
+        icon: "success",
+        title: "Account created",
         html: body,
         confirmButtonText: "Got it",
       });
       return;
     }
-    UI.toast(values.name + "'s account is ready.", {
-      type: sent ? "success" : "warning",
-      title: sent ? "Account created" : "Account created, email not sent",
-    });
+    UI.toast(values.name + "'s account is ready.", { title: "Account created" });
   }
 
   function resendActivation(id) {

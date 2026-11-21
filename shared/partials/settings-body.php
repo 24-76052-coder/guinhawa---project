@@ -51,7 +51,7 @@ declare(strict_types=1);
                   <input class="form-control" id="profileName" type="text" required>
                   <div class="invalid-feedback">Enter your full name.</div>
                 </div>
-                <div class="col-md-6">
+                <div class="col-md-6" id="adminProfileEmailField">
                   <label class="form-label" for="profileEmail">Work email (Gmail)</label>
                   <input class="form-control" id="profileEmail" type="email" placeholder="name@gmail.com" autocomplete="email" required>
                   <div class="invalid-feedback">Enter a valid email address.</div>
@@ -71,6 +71,48 @@ declare(strict_types=1);
                 </button>
               </div>
             </form>
+          </section>
+
+          <section class="settings-card mb-4 d-none" id="staffEmailSection">
+            <header class="settings-card__head">
+              <span class="settings-card__icon" aria-hidden="true"><i class="bi bi-envelope-check"></i></span>
+              <div class="settings-card__headtext">
+                <h2 class="settings-card__title">Staff Gmail</h2>
+                <p class="settings-card__sub">Add or change your Gmail address. Verification is optional for signing in.</p>
+              </div>
+              <span class="settings-card__badge" id="staffEmailBadge">Not verified</span>
+            </header>
+
+            <div class="detail-item mb-3">
+              <span class="detail-item__label">Current Gmail status</span>
+              <span class="detail-item__value" id="staffEmailCurrent">No Gmail added</span>
+            </div>
+            <div class="row g-3 align-items-end">
+              <div class="col-md-7">
+                <label class="form-label" for="staffEmailAddress">Gmail address</label>
+                <input class="form-control" id="staffEmailAddress" type="email" pattern="[^@\s]+@gmail\.com" placeholder="name@gmail.com" autocomplete="email" required>
+                <div class="invalid-feedback">Enter a valid Gmail address ending in @gmail.com.</div>
+              </div>
+              <div class="col-md-5">
+                <button class="btn btn-outline-app" type="button" id="requestStaffEmailCode">
+                  <i class="bi bi-send" aria-hidden="true"></i> Send verification code
+                </button>
+              </div>
+              <div class="col-md-7 d-none" id="staffEmailCodePanel">
+                <label class="form-label" for="staffEmailCode">6-digit verification code</label>
+                <input class="form-control" id="staffEmailCode" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="6" pattern="[0-9]{6}" placeholder="000000">
+                <div class="invalid-feedback">Enter the 6-digit code sent to your Gmail.</div>
+              </div>
+              <div class="col-md-5 d-none" id="staffEmailVerifyPanel">
+                <button class="btn btn-brand" type="button" id="verifyStaffEmailCode">
+                  <i class="bi bi-shield-check" aria-hidden="true"></i> Verify Gmail
+                </button>
+              </div>
+            </div>
+            <div class="alert-app mt-3" role="status" aria-live="polite" id="staffEmailStatus">
+              <i class="bi bi-info-circle" aria-hidden="true"></i>
+              <div>Gmail is optional. A verified Gmail can be used for password recovery.</div>
+            </div>
           </section>
 
           <!-- Business profile -->

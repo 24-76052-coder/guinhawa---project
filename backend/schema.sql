@@ -34,6 +34,7 @@ DROP TABLE IF EXISTS audit_logs;
 DROP TABLE IF EXISTS account_audit_logs;
 DROP TABLE IF EXISTS settings;
 DROP TABLE IF EXISTS user_appearance_settings;
+DROP TABLE IF EXISTS staff_email_verifications;
 DROP TABLE IF EXISTS account_activation_tokens;
 DROP TABLE IF EXISTS employees;
 DROP TABLE IF EXISTS admin;
@@ -76,6 +77,7 @@ CREATE TABLE employees (
     username VARCHAR(60) NOT NULL,
     full_name VARCHAR(160) NOT NULL,
     email VARCHAR(190) NULL,
+    email_verified TINYINT(1) NOT NULL DEFAULT 0,
     contact_number VARCHAR(40) NULL,
     avatar MEDIUMTEXT NULL,
     role ENUM('cashier', 'counter-staff', 'inventory-staff', 'staff') NOT NULL DEFAULT 'cashier',
@@ -545,6 +547,21 @@ CREATE TABLE account_activation_tokens (
     KEY idx_activation_employee (employee_id, used_at),
     KEY idx_activation_expiry (expires_at),
     CONSTRAINT fk_activation_employee
+        FOREIGN KEY (employee_id) REFERENCES employees (id)
+        ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE staff_email_verifications (
+    employee_id INT UNSIGNED NOT NULL,
+    pending_email VARCHAR(190) NOT NULL,
+    otp_hash VARCHAR(255) NOT NULL,
+    expires_at DATETIME NOT NULL,
+    attempts TINYINT UNSIGNED NOT NULL DEFAULT 0,
+    last_sent_at DATETIME NOT NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (employee_id),
+    UNIQUE KEY uq_staff_email_verifications_email (pending_email),
+    CONSTRAINT fk_staff_email_verifications_employee
         FOREIGN KEY (employee_id) REFERENCES employees (id)
         ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

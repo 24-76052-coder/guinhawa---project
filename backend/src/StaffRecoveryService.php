@@ -71,7 +71,7 @@ final class StaffRecoveryService
 
         $employee = Database::fetchOne(
             'SELECT * FROM employees
-             WHERE status = "active" AND (username = ? OR employee_id = ? OR email = ?)
+             WHERE status = "active" AND (username = ? OR employee_id = ? OR (email_verified = 1 AND email = ?))
              LIMIT 1',
             [$identifier, $identifier, $identifier],
         );

@@ -27,7 +27,7 @@ This copy runs **in parallel** with the existing app at `/guinhawa`. The origina
    cmd /c mklink /J C:\xampp2\htdocs\guinhawa_system C:\Users\Lenovo\guinhawa_system
    ```
 
-2. Import the schema into a fresh database, or restore an existing dump:
+2. For a fresh database only, import the schema. For an existing database, skip this import and run the additive migrations below; `schema.sql` recreates tables and is not an upgrade script.
 
    ```powershell
    C:\xampp\mysql\bin\mysql.exe -u root -e "CREATE DATABASE IF NOT EXISTS guinhawa_db"
@@ -43,6 +43,7 @@ This copy runs **in parallel** with the existing app at `/guinhawa`. The origina
    C:\xampp2\php\php.exe backend\scripts\migrate_quantities.php
    C:\xampp2\php\php.exe backend\scripts\migrate_sack_weight.php
    C:\xampp2\php\php.exe backend\scripts\migrate_design_port.php
+   C:\xampp2\php\php.exe backend\scripts\migrate_staff_email_verification.php
    ```
 
 4. Create the administrator if the database has none:
@@ -60,17 +61,18 @@ Configuration lives in `backend/config/config.php`. Defaults are the standard XA
 ## Accounts and security
 
 - Passwords are hashed with `password_hash()` and checked with `password_verify()`; no plain-text passwords exist in the database.
-- New and reset accounts receive a temporary password with `must_change_password = 1`. Until it is replaced, every API route except `/auth/me` and the change-password route returns `403 PASSWORD_CHANGE_REQUIRED`.
+- Admin-created staff accounts require a full name, unique username, and initial password. Passwords are stored with `password_hash()` and staff sign in with username and password; Gmail is optional.
+- Staff Gmail addresses can be added or changed in the staff profile. A 6-digit code must be confirmed before the address is marked verified. Missing or unverified Gmail never blocks sign-in; confirming an email recovery code also verifies that address.
 - The PHP session cookie is `guinhawa_session` (`HttpOnly`, `SameSite=Lax`, 8-hour lifetime, path `/`), so the API and the HTML pages share one login.
 - Every dashboard page is a `.php` file under `admin/`, `inventory/` or `cashier/` and starts with `shared/guard.php`, which checks the session and the role before rendering. Direct access to a page outside the signed-in role's area returns `403`.
 - All writes require a CSRF token (`X-CSRF-Token`, delivered by `GET /api/auth/me` and on sign-in).
 - Role checks are enforced in the controllers as well as in the UI.
-- The admin email OTP recovery flow needs SMTP credentials. Without them only the offline recovery code works.
+- Gmail verification and email password recovery need SMTP credentials. Staff can still sign in without Gmail or when Gmail is unverified.
 - `.sql`, `.md`, `backend/` source, and `archive/` are denied by `.htaccess`.
 
 ### Signing in
 
-There are no demo accounts. Use the administrator account created by `setup_admin.php` and the temporary password it prints, then choose a new password when prompted. Staff accounts are created by the Admin in **User Management**; their temporary passwords are shown once.
+There are no demo accounts. Use the administrator account created by `setup_admin.php` and the temporary password it prints, then choose a new password when prompted. Admins create staff accounts with a username and initial password; staff can sign in without Gmail.
 
 ---
 
@@ -100,17 +102,17 @@ Navigation items are hidden for roles that cannot access them, and `shared/guard
 
 ### Authentication and sessions
 - Glassmorphism sign-in page against the real `POST /api/auth/login` endpoint with show/hide password, Caps Lock hint, remember-me, loading state, and role-based redirect.
-- New staff accounts are created by an Admin as **Active** with an unusable password hash. A notification email carries the Employee ID, username and login link; the staff member sets or resets their password through **Forgot password** on the login page. There is no shared or temporary password.
+- Admin-created staff accounts require an initial password, and staff sign in with username and password. Gmail is optional and can be verified later in the staff profile.
 - Legacy forced password change and the dedicated `login/change-password.php` page remain available.
 - Deactivated and still-pending accounts cannot sign in, and completing a password reset signs that account out everywhere.
 - Logout destroys the PHP session and returns to the sign-in page.
 - The intro animation plays once when the system is opened in a browser tab and is skipped after logout, on refresh, and when the session expires.
 
-### Staff account creation and email notification
-- An Admin creates an Inventory Staff or Cashier account from **User Management → Add new staff**. The account is created **Active** with an unusable random password hash, and the Employee ID and Date Joined are generated automatically.
-- `backend/src/StaffActivationService.php::sendAccountReady()` emails an account-ready notification to the staff member's work email. It contains the Employee ID, username, fixed work schedule, login instructions and a link to `login/index.php`. No activation token is created.
-- The staff member signs in with their username and, when they need to set or reset a password, uses **Forgot password** on the login page. The registered work email is the recovery address.
-- Legacy **Pending Activation** accounts created before this change still use the single-use 24-hour activation link, and the Admin can still resend or cancel those invitations from the panel above the team directory.
+### Staff account creation and Gmail verification
+- Admin-created staff accounts require a full name, unique username, and initial password. The Employee ID and Date Joined are generated automatically; accounts can be Active, Pending, or Inactive.
+- Staff sign in with their username and the password set by the Admin. Gmail is optional at creation and can be added later from Settings > Staff Gmail.
+- A 6-digit Gmail verification code is stored as a password hash, expires after 10 minutes, allows 5 attempts, and can be resent after 60 seconds. Changing Gmail leaves the previous address in place until the new address is verified.
+- Password recovery uses a 6-digit code sent to the registered address; confirming the code verifies that staff Gmail. Existing Pending Activation invitations continue to support their legacy email activation links.
 
 ### Password recovery by email OTP (Admin, Inventory Staff, Cashier)
 - `login/forgot-password.php` is a three-step wizard: registered email → 6-digit code → new password.
@@ -159,12 +161,12 @@ Navigation items are hidden for roles that cannot access them, and `shared/guard
 
 ### Other modules
 - **Suppliers:** supplier records, contacts, and linked product counts.
-- **User Management:** create staff with a simple Add new staff form (full name, optional phone number, automatic Employee ID, username, staff email, and role), automatic Date Joined, unique username/email checks, role assignment (Inventory Staff / Cashier only), search/filter, CSV export, and an automatic account-ready notification email. Legacy pending invitations can still be resent or cancelled. Every employee uses the fixed **8:00 AM – 5:00 PM** schedule; no shift selection is needed. Only Admins can create accounts.
+- **User Management:** create staff with full name, username, initial password, optional Gmail, role, and account status. Employee ID and Date Joined are generated automatically; the directory shows Gmail verification state and supports account activation/deactivation. Legacy pending invitations can still be resent or cancelled. Every employee uses the fixed 8:00 AM to 5:00 PM schedule; no shift selection is needed. Only Admins can create accounts.
 - **Deleting staff (kept as a backup):** the trash button on each staff row removes the account from the team directory and blocks sign-in, but nothing is erased. The `employees` row is soft-deleted (`deleted_at`, `deleted_by`) so personal details, sales, attendance and audit history stay linked to the same person, and outstanding activation links are cancelled. Deleted records appear in the **Archived staff** panel below the team directory, where an Admin can open a read-only **Saved staff record** (name, Employee ID, username, email, phone, role, work schedule, joined, last active, deleted on/by) or **Restore** the record. Restored accounts return as **Inactive** and must be activated before sign-in. Archived rows keep their unique username and email, so re-creating one returns a message to restore the archived record instead.
 - **Attendance:** daily log with clock in/out, admin manual edit (Present, Late, On Leave, Absent, Not recorded), notes, and summary figures.
 - **Inventory History:** filterable ledger of stock in, stock out, adjustments, and sale movements.
 - **Reports:** sales and inventory reporting with date ranges and printable/exportable summaries.
-- **Settings:** signed-in profile with role badge, real password change, business profile, GCash QR (stored in `settings.gcash_qr`), appearance, notification preferences, read-only JSON snapshot, and system information. The page body is shared by all three roles in `shared/partials/settings-body.php` and uses the full content width, with the Appearance card providing its own jump chips for quick section access.
+- **Settings:** signed-in profile with role badge, real password change, staff Gmail verification, business profile, GCash QR (stored in `settings.gcash_qr`), appearance, notification preferences, read-only JSON snapshot, and system information. The page body is shared by all three roles in `shared/partials/settings-body.php` and uses the full content width, with the Appearance card providing its own jump chips for quick section access.
 
 ---
 
@@ -282,6 +284,9 @@ All routes are under `/guinhawa_system/api` and return JSON. Authentication is t
 | `PATCH` | `/sales/{id}/status` | Mark a sale completed or refunded |
 | `POST`/`PUT`/`DELETE` | `/suppliers…` | Supplier records |
 | `GET`/`POST`/`PUT`/`DELETE` | `/admin/employees…` | Staff accounts and activation actions |
+| `GET` | `/auth/email-verification` | Current staff Gmail verification state |
+| `POST` | `/auth/email-verification/request` | Send a Gmail verification code |
+| `POST` | `/auth/email-verification/verify` | Verify and save the pending Gmail address |
 | `GET` | `/admin/employees/archived` | Deleted staff kept as read-only backups |
 | `POST` | `/admin/employees/{id}/restore` | Restore an archived staff record (returns **Inactive**) |
 | `DELETE` | `/admin/employees/{id}` | Delete a staff account (soft delete; record kept in the archive) |
@@ -297,7 +302,7 @@ All routes are under `/guinhawa_system/api` and return JSON. Authentication is t
 
 ## Email setup (Gmail SMTP)
 
-Account-ready notifications and password-reset codes are sent with PHPMailer over Gmail SMTP. Credentials must never live inside `htdocs`.
+Gmail verification codes, password-reset codes, and legacy activation links are sent with PHPMailer over Gmail SMTP. Credentials must never live inside `htdocs`. Staff account creation itself does not require or send email.
 
 1. Enable **2-Step Verification** on the dedicated Guinhawa Google account, then create an **App password** (Google Account → Security → App passwords).
 2. Copy `backend/config/config.local.example.php` to `C:/xampp/guinhawa-config/config.local.php` (outside the web root) and fill in:
@@ -318,7 +323,7 @@ Account-ready notifications and password-reset codes are sent with PHPMailer ove
    ],
    ```
 
-3. Set `app.url` to the address staff actually open so the login link in the notification email points to this installation.
+3. Set `app.url` to the address staff actually open so legacy activation links point to this installation.
 4. PHPMailer is already vendored in `backend/vendor/PHPMailer/src`. To reinstall it, run:
 
    ```powershell
@@ -350,9 +355,10 @@ The Gmail address and app password are read from the protected config file (or e
 ## Notes
 
 - This app shares `guinhawa_db` with the existing `/guinhawa` app. Both can run at the same time; schema changes are additive.
-- No CDNs, analytics, or third-party front-end assets are used. Bootstrap, Bootstrap Icons, SweetAlert2, and fonts are served locally. The only outbound network call is the configured Gmail SMTP connection that delivers account-ready notifications and password-reset codes.
+- No CDNs, analytics, or third-party front-end assets are used. Bootstrap, Bootstrap Icons, SweetAlert2, and fonts are served locally. The only outbound network call is the configured Gmail SMTP connection that delivers verification codes, password-reset codes, and legacy activation emails.
 - Product images are reused from the assets folder and are not overwritten by the application.
 - UI preferences (colour combination, theme mode, font size, density, corners, animation, sidebar, card style, background, remember-me) are cached in browser storage for instant painting; the authoritative copy is the signed-in account's row in `user_appearance_settings`. Business data is always read from MySQL.
 - Run `C:\xampp2\php\php.exe backend\scripts\migrate_appearance.php` once on an older database to add the `preferences` JSON column. The script is idempotent.
 - Run `C:\xampp2\php\php.exe backend\scripts\migrate_staff_archive.php` once on an older database to add the `employees.deleted_at` / `employees.deleted_by` archive columns and their index. The script is idempotent and never deletes data.
+- Run `C:\xampp2\php\php.exe backend\scripts\migrate_staff_email_verification.php` once on an older database to add `employees.email_verified` and the one-time verification table. It is additive; existing email addresses start unverified and no staff rows are deleted.
 - Run `C:\xampp2\php\php.exe backend\scripts\migrate_fixed_schedule.php` once on an older database to drop the legacy `employees.work_shift` column. Every employee now follows the fixed **8:00 AM – 5:00 PM** schedule. The script is idempotent and keeps all staff rows.

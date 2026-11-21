@@ -44,11 +44,12 @@
     }
 
     var user = Store.getCurrentUser();
-    var result = Store.saveProfile({
+    var values = {
       name: name,
-      email: $("profileEmail").value.trim(),
       phone: $("profilePhone").value.trim(),
-    });
+    };
+    if (user && user.type === "admin") values.email = $("profileEmail").value.trim();
+    var result = Store.saveProfile(values);
     if (!result.ok) {
       UI.toast(result.message, { type: "danger", title: "Profile not saved" });
       return;
@@ -64,6 +65,92 @@
 
     form.classList.remove("was-validated");
     UI.toast("Your profile details were saved.", { title: "Profile updated" });
+  }
+
+  /* --------------------------- Staff Gmail verification ------------------ */
+
+  function setStaffEmailStatus(message, tone) {
+    var status = $("staffEmailStatus");
+    if (!status) return;
+    var toneClass = tone === "warning" ? " alert-app--warn" : tone === "danger" ? " alert-app--danger" : "";
+    status.className = "alert-app mt-3" + toneClass;
+    status.lastElementChild.textContent = message;
+  }
+
+  function renderStaffEmailVerification() {
+    var result = Store.getStaffEmailVerification();
+    if (!result.ok || !result.verification) {
+      setStaffEmailStatus(result.message || "Gmail verification status could not be loaded.", "warning");
+      return;
+    }
+
+    var verification = result.verification;
+    var verified = verification.verified === true;
+    var email = verification.email || "";
+    var pendingEmail = verification.pendingEmail || "";
+    $("staffEmailBadge").textContent = verified ? "Verified" : pendingEmail ? "Verification pending" : "Not verified";
+    $("staffEmailCurrent").textContent = email
+      ? email + (verified ? " · Verified" : " · Not verified")
+      : "No Gmail added";
+    $("staffEmailAddress").value = pendingEmail || email;
+    $("staffEmailCodePanel").classList.toggle("d-none", !pendingEmail);
+    $("staffEmailVerifyPanel").classList.toggle("d-none", !pendingEmail);
+    $("requestStaffEmailCode").innerHTML = pendingEmail
+      ? '<i class="bi bi-arrow-repeat" aria-hidden="true"></i> Resend verification code'
+      : '<i class="bi bi-send" aria-hidden="true"></i> Send verification code';
+    if (pendingEmail) {
+      setStaffEmailStatus("A code was sent to " + pendingEmail + ". It expires in 10 minutes.", "warning");
+    } else if (verified) {
+      setStaffEmailStatus("Your Gmail is verified and can be used for password recovery. You can enter a different Gmail to change it.", "success");
+    } else {
+      setStaffEmailStatus("Gmail is optional. A verified Gmail can be used for password recovery.");
+    }
+  }
+
+  function requestStaffEmailCode() {
+    var input = $("staffEmailAddress");
+    if (!input.checkValidity()) {
+      input.classList.add("is-invalid");
+      input.focus();
+      return;
+    }
+    input.classList.remove("is-invalid");
+
+    var button = $("requestStaffEmailCode");
+    button.disabled = true;
+    var result = Store.requestStaffEmailVerification(input.value.trim());
+    button.disabled = false;
+    if (!result.ok) {
+      setStaffEmailStatus(result.message || "The verification code could not be sent.", "danger");
+      return;
+    }
+    if (result.alreadyVerified) {
+      renderStaffEmailVerification();
+      UI.toast("That Gmail address is already verified.", { title: "Gmail verified" });
+      return;
+    }
+    renderStaffEmailVerification();
+    setStaffEmailStatus(result.message || "Verification code sent. Check your Gmail inbox and spam folder.", "success");
+  }
+
+  function verifyStaffEmailCode() {
+    var input = $("staffEmailCode");
+    if (!input.checkValidity()) {
+      input.classList.add("is-invalid");
+      input.focus();
+      return;
+    }
+    input.classList.remove("is-invalid");
+
+    var result = Store.verifyStaffEmail(input.value.trim());
+    if (!result.ok) {
+      setStaffEmailStatus(result.message || "That verification code could not be confirmed.", "danger");
+      return;
+    }
+    input.value = "";
+    renderUserProfile();
+    renderStaffEmailVerification();
+    UI.toast("Your Gmail address is verified.", { title: "Gmail verified" });
   }
 
   /* -------------------------------- Business ------------------------------ */
@@ -968,6 +1055,24 @@
     renderSystemInfo();
     bindAppearance();
     bindGcashQr();
+
+    if (signedIn.type === "employee") {
+      $("adminProfileEmailField").classList.add("d-none");
+      $("profileEmail").required = false;
+      $("staffEmailSection").classList.remove("d-none");
+      renderStaffEmailVerification();
+      $("requestStaffEmailCode").addEventListener("click", requestStaffEmailCode);
+      $("verifyStaffEmailCode").addEventListener("click", verifyStaffEmailCode);
+      $("staffEmailAddress").addEventListener("input", function () {
+        this.classList.remove("is-invalid");
+      });
+      $("staffEmailCode").addEventListener("input", function () {
+        this.classList.remove("is-invalid");
+        this.value = this.value.replace(/\D/g, "").slice(0, 6);
+      });
+    } else {
+      $("staffEmailSection").classList.add("d-none");
+    }
 
     if (signedIn.role !== "Admin") {
       ["business", "gcash", "data", "mailDelivery"].forEach(function (id) {
