@@ -1,0 +1,15 @@
+# Local credentials and environment overrides
+.env
+.env.*
+!.env.example
+/backend/config/config.local.php
+
+# Local database exports and backups can contain account data and password hashes
+/guinhawa_db.sql
+*.sql.gz
+*.dump
+*.bak
+
+# User uploaded files are runtime data; keep only the access-control file
+/backend/uploads/*
+!/backend/uploads/.htaccess

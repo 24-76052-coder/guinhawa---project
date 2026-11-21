@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" role="img" aria-label="Day-old chick">
+  <rect width="120" height="120" rx="24" fill="#FFF7DF"/>
+  <ellipse cx="60" cy="103" rx="27" ry="5" fill="#F0E3BE"/>
+  <path d="M42 84c-4 0-7-3-7-7 0-9 7-16 16-16h18c9 0 16 7 16 16 0 4-3 7-7 7H42Z" fill="#FFD766" stroke="#D6A72E" stroke-width="2.4"/>
+  <circle cx="60" cy="48" r="23" fill="#FFE28C" stroke="#D6A72E" stroke-width="2.4"/>
+  <path d="M58 27c1-5 4-8 7-8" stroke="#D6A72E" stroke-width="3" fill="none" stroke-linecap="round"/>
+  <circle cx="52" cy="45" r="2.6" fill="#4A3A16"/>
+  <circle cx="68" cy="45" r="2.6" fill="#4A3A16"/>
+  <path d="M55 53l5 4 5-4" fill="#F08A3C" stroke="#D96F21" stroke-width="1.6" stroke-linejoin="round"/>
+  <path d="M39 82c-8 0-12-7-8-13 3-5 10-6 15-3" fill="#FFE28C" stroke="#D6A72E" stroke-width="2.4"/>
+  <path d="M73 76c6-2 10 1 10 6" stroke="#D6A72E" stroke-width="2.4" fill="none" stroke-linecap="round"/>
+  <path d="M53 98l-4 8M68 98l4 8" stroke="#E5A92E" stroke-width="3" stroke-linecap="round"/>
+</svg>

@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" role="img" aria-label="Poultry drinker">
+  <rect width="120" height="120" rx="24" fill="#EAF5F0"/>
+  <ellipse cx="60" cy="102" rx="30" ry="5" fill="#CFE5DA"/>
+  <path d="M40 42h40l8 44c1 7-4 12-11 12H43c-7 0-12-5-11-12l8-44Z" fill="#FBFDFC" stroke="#168B4D" stroke-width="2.6"/>
+  <path d="M37 76h46l2 10c1 7-4 12-11 12H46c-7 0-12-5-11-12l2-10Z" fill="#E14848" stroke="#B83232" stroke-width="2"/>
+  <path d="M48 42V29c0-4 3-7 7-7h10c4 0 7 3 7 7v13" fill="#DFF1E6" stroke="#168B4D" stroke-width="2.4"/>
+  <circle cx="60" cy="34" r="4" fill="#168B4D"/>
+  <path d="M45 86h30" stroke="#FFFFFF" stroke-width="3" stroke-linecap="round" opacity=".55"/>
+</svg>

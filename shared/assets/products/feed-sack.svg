@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" role="img" aria-label="Poultry feed sack">
+  <rect width="120" height="120" rx="24" fill="#E9F5EE"/>
+  <ellipse cx="60" cy="101" rx="27" ry="5" fill="#CFE7D8"/>
+  <path d="M38 38h44c2.2 0 4 1.8 4 4v47c0 4.4-3.6 8-8 8H42c-4.4 0-8-3.6-8-8V42c0-2.2 1.8-4 4-4Z" fill="#FBFDF9" stroke="#0B5A38" stroke-width="3"/>
+  <path d="M38 38c4-4.5 10-6 22-6s18 1.5 22 6" fill="none" stroke="#0B5A38" stroke-width="3" stroke-linecap="round"/>
+  <path d="M47 42v47M73 42v47" stroke="#D7EADF" stroke-width="2"/>
+  <rect x="44" y="54" width="32" height="24" rx="6" fill="#168B4D"/>
+  <text x="60" y="70" text-anchor="middle" font-family="Segoe UI, Arial, sans-serif" font-size="10" font-weight="700" fill="#FFFFFF" letter-spacing="1">FEED</text>
+  <path d="M50 88c2.5-3 5-4 8-4s5.5 1 8 4" stroke="#27A75B" stroke-width="2.4" fill="none" stroke-linecap="round"/>
+  <circle cx="40" cy="94" r="2.2" fill="#C89B3C"/>
+  <circle cx="48" cy="96" r="1.7" fill="#D9B45B"/>
+  <circle cx="86" cy="93" r="2" fill="#C89B3C"/>
+</svg>

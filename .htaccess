@@ -1,0 +1,32 @@
+RewriteEngine On
+
+# JSON API front controller.
+RewriteCond %{REQUEST_URI} ^/guinhawa_system/api/(.*)$
+RewriteRule ^api/(.*)$ backend/api/index.php [QSA,L]
+
+# Never serve source control, backend source, schema, scripts or archives.
+RewriteRule ^(?:\.git|archive|backend/(?!api(?:/|$)))(?:/|$) - [F,L]
+
+# --- Legacy URLs from the flat demonstration layout -------------------------
+# The dashboards now live in role folders. Keep old bookmarks working.
+
+# Sign-in pages.
+RewriteRule ^guinhawa-login/?$ /guinhawa_system/login/index.php [R=301,L]
+RewriteRule ^guinhawa-login/index\.html$ /guinhawa_system/login/index.php [R=301,L,QSA]
+RewriteRule ^guinhawa-login/change-password\.html$ /guinhawa_system/login/change-password.php [R=301,L,QSA]
+
+# Old flat dashboard entry points.
+RewriteRule ^guinhawa-admin/?$ /guinhawa_system/admin/index.php [R=301,L]
+RewriteRule ^guinhawa-admin/index\.html$ /guinhawa_system/admin/index.php [R=301,L,QSA]
+RewriteRule ^guinhawa-admin/inventory-dashboard\.html$ /guinhawa_system/inventory/index.php [R=301,L,QSA]
+RewriteRule ^guinhawa-admin/cashier-dashboard\.html$ /guinhawa_system/cashier/index.php [R=301,L,QSA]
+
+# Every other old admin page is an Admin-area page with the same name.
+RewriteRule ^guinhawa-admin/([A-Za-z0-9_-]+)\.html$ /guinhawa_system/admin/$1.php [R=301,L,QSA]
+
+# Never allow the raw shell or backup files to be downloaded.
+<FilesMatch "(?i)^(?:.*\.sql|.*\.bak|.*\.tmp|.*\.md|composer\.(?:json|lock)|package(?:-lock)?\.json|\.env.*)$">
+    Require all denied
+</FilesMatch>
+
+DirectoryIndex index.php

@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" role="img" aria-label="Tray of fresh eggs">
+  <rect width="120" height="120" rx="24" fill="#FBF3E6"/>
+  <ellipse cx="60" cy="100" rx="34" ry="6" fill="#EADCC5"/>
+  <path d="M24 66h72l-6 30a6 6 0 0 1-6 5H36a6 6 0 0 1-6-5l-6-30Z" fill="#F4E6CE" stroke="#C9A96E" stroke-width="2.5"/>
+  <g fill="#C9884A" stroke="#A96B33" stroke-width="1.6">
+    <ellipse cx="43" cy="55" rx="12" ry="15"/>
+    <ellipse cx="66" cy="50" rx="12" ry="15"/>
+    <ellipse cx="85" cy="59" rx="11" ry="14"/>
+  </g>
+  <g fill="#E4AE73" opacity=".8">
+    <ellipse cx="39" cy="49" rx="3.2" ry="4.6"/>
+    <ellipse cx="62" cy="44" rx="3.2" ry="4.6"/>
+    <ellipse cx="82" cy="53" rx="3" ry="4.2"/>
+  </g>
+  <path d="M31 70h58l-2 9H33l-2-9Z" fill="#E4D2B2"/>
+  <path d="M40 80v14M60 80v16M80 80v14" stroke="#D8C29C" stroke-width="2" opacity=".8"/>
+</svg>

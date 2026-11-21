@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" role="img" aria-label="Rice hull bedding sack">
+  <rect width="120" height="120" rx="24" fill="#F7F1E3"/>
+  <ellipse cx="60" cy="102" rx="28" ry="5" fill="#E5D9BF"/>
+  <path d="M36 40h48c2 0 4 2 4 4v46c0 5-4 9-9 9H41c-5 0-9-4-9-9V44c0-2 2-4 4-4Z" fill="#E8D3A9" stroke="#B38B4B" stroke-width="2.6"/>
+  <path d="M36 40c4-5 11-7 24-7s20 2 24 7" fill="none" stroke="#B38B4B" stroke-width="2.6"/>
+  <rect x="44" y="57" width="32" height="22" rx="5" fill="#FBF6EA"/>
+  <text x="60" y="70" text-anchor="middle" font-family="Segoe UI, Arial, sans-serif" font-size="8" font-weight="700" fill="#7A5A28" letter-spacing=".5">RICE HULL</text>
+  <circle cx="39" cy="91" r="2" fill="#C7A76A"/>
+  <circle cx="47" cy="94" r="1.6" fill="#D3B77F"/>
+  <circle cx="83" cy="90" r="2.1" fill="#C7A76A"/>
+  <circle cx="76" cy="95" r="1.5" fill="#D3B77F"/>
+</svg>

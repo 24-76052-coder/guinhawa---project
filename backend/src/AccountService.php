@@ -1,0 +1,570 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Guinhawa;
+
+/**
+ * Account lifecycle rules shared by the HTML User Management page and the
+ * existing JSON API. Only the administrator can create, update, reset or
+ * deactivate staff/cashier accounts.
+ */
+final class AccountService
+{
+    public static function adminExists(): bool
+    {
+        return (bool) Database::fetchOne('SELECT id FROM admin WHERE id = 1 LIMIT 1');
+    }
+
+    public static function admin(): ?array
+    {
+        return Database::fetchOne('SELECT * FROM admin WHERE id = 1 LIMIT 1');
+    }
+
+    /**
+     * Create the one-and-only administrator. MySQL GET_LOCK serialises two
+     * simultaneous setup requests; the admin table's fixed primary key and
+     * CHECK constraint are the final database-level guard.
+     *
+     * @return array{recoveryCode: string, admin: array}
+     */
+    public static function createInitialAdmin(
+        string $fullName,
+        string $email,
+        string $username,
+        string $password,
+        string $confirmPassword,
+        string $ip = '',
+    ): array {
+        if (self::adminExists()) {
+            throw new HttpException('An Admin account already exists. The first-time setup is permanently locked.', 409, 'SETUP_LOCKED');
+        }
+
+        $fullName = Validator::text($fullName, 'Full name', 1, 160);
+        $email = Validator::email($email, true);
+        $username = Validator::username($username);
+        $password = Validator::password($password, 'Password');
+        if ($password !== $confirmPassword) {
+            throw new HttpException('The password confirmation does not match.', 422, 'VALIDATION');
+        }
+
+        self::assertIdentityAvailable($username, $email);
+
+        $lock = Database::fetchOne("SELECT GET_LOCK('guinhawa_admin_setup', 10) AS acquired");
+        if ((int) ($lock['acquired'] ?? 0) !== 1) {
+            throw new HttpException('Another setup request is in progress. Please try again.', 409, 'SETUP_BUSY');
+        }
+
+        try {
+            return Database::transaction(static function () use ($fullName, $email, $username, $password, $ip): array {
+                if (self::adminExists()) {
+                    throw new HttpException('An Admin account already exists. The first-time setup is permanently locked.', 409, 'SETUP_LOCKED');
+                }
+
+                Database::execute(
+                    'INSERT INTO admin
+                        (id, username, full_name, email, password_hash, must_change_password, password_changed_at)
+                     VALUES (1, ?, ?, ?, ?, 0, NOW())',
+                    [$username, $fullName, $email, password_hash($password, PASSWORD_DEFAULT)],
+                );
+
+                $recoveryCode = self::insertRecoveryCode($ip);
+
+                Auth::audit(
+                    ['type' => 'admin', 'id' => 1, 'name' => $fullName],
+                    'Initial Admin Account Created',
+                    'The first-time setup created the sole Administrator account.',
+                    'ADMIN-01',
+                );
+
+                return [
+                    'recoveryCode' => $recoveryCode,
+                    'admin' => Users::mapAdmin(Database::fetchOne('SELECT * FROM admin WHERE id = 1 LIMIT 1') ?? []),
+                ];
+            });
+        } finally {
+            Database::fetchOne("SELECT RELEASE_LOCK('guinhawa_admin_setup') AS released");
+        }
+    }
+
+    /** Issue a fresh single-use backup recovery code and invalidate old ones. */
+    public static function generateRecoveryCode(array $actor, string $ip = ''): string
+    {
+        $admin = self::admin();
+        if (!$admin) {
+            throw new HttpException('The Admin account no longer exists.', 404, 'NOT_FOUND');
+        }
+
+        return Database::transaction(static function () use ($actor, $ip): string {
+            Database::execute(
+                'UPDATE admin_recovery_codes SET used_at = NOW() WHERE admin_id = 1 AND used_at IS NULL',
+            );
+            $code = self::insertRecoveryCode($ip);
+            Auth::audit(
+                $actor,
+                'Backup Recovery Code Generated',
+                'A replacement single-use backup recovery code was generated.',
+                'ADMIN-01',
+            );
+            return $code;
+        });
+    }
+
+    public static function listEmployees(string $search = ''): array
+    {
+        $where = [
+            "role IN ('inventory-staff', 'cashier', 'counter-staff', 'staff')",
+            'deleted_at IS NULL',
+        ];
+        $params = [];
+
+        $search = trim($search);
+        if ($search !== '') {
+            $term = '%' . str_replace(['\\', '%', '_'], ['\\\\', '\\%', '\\_'], $search) . '%';
+            $where[] = '(full_name LIKE ? OR employee_id LIKE ? OR username LIKE ? OR email LIKE ?)';
+            array_push($params, $term, $term, $term, $term);
+        }
+
+        $rows = Database::fetchAll(
+            'SELECT id, employee_id, username, full_name, email, contact_number, role,
+                    date_joined, status, must_change_password, temp_password_expires_at, last_login_at, created_at,
+                    deleted_at, deleted_by
+             FROM employees
+             WHERE ' . implode(' AND ', $where) . "
+             ORDER BY status = 'active' DESC, status = 'pending' DESC, full_name ASC",
+            $params,
+        );
+
+        return array_map([Users::class, 'mapEmployee'], $rows);
+    }
+
+    /**
+     * Staff records an Admin deleted. The rows are kept as a read-only backup
+     * so sales, attendance, audit history and personal details stay intact.
+     */
+    public static function archivedEmployees(): array
+    {
+        $rows = Database::fetchAll(
+            "SELECT id, employee_id, username, full_name, email, contact_number, role,
+                    date_joined, status, must_change_password, temp_password_expires_at, last_login_at,
+                    created_at, deleted_at, deleted_by
+             FROM employees
+             WHERE deleted_at IS NOT NULL
+               AND role IN ('inventory-staff', 'cashier', 'counter-staff', 'staff')
+             ORDER BY deleted_at DESC, id DESC",
+        );
+
+        return array_map([Users::class, 'mapEmployee'], $rows);
+    }
+
+    public static function findEmployee(int $id): array
+    {
+        $row = Database::fetchOne('SELECT * FROM employees WHERE id = ? LIMIT 1', [$id]);
+        if (!$row) {
+            throw new HttpException('That account no longer exists.', 404, 'NOT_FOUND');
+        }
+        if (!empty($row['deleted_at'])) {
+            throw new HttpException(
+                'That staff account was deleted. Restore it from Archived staff first.',
+                409,
+                'ARCHIVED',
+            );
+        }
+        if (!in_array((string) $row['role'], Validator::STAFF_ROLES, true)) {
+            throw new HttpException('Administrator accounts are not managed from User Management.', 400, 'VALIDATION');
+        }
+        return $row;
+    }
+
+    /**
+     * Create an active staff account and email the staff member a notification
+     * that the account is ready. No password is chosen by the Admin: the
+     * account starts with an unusable random hash, and the staff member sets
+     * their own password through the Forgot password page.
+     *
+     * @return array{account: array, notification: array}
+     */
+    public static function createEmployee(array $input, array $actor): array
+    {
+        $fullName = Validator::text($input['fullName'] ?? '', 'Full name', 1, 160);
+        $username = Validator::username($input['username'] ?? '');
+        $email = Validator::email($input['email'] ?? '', true);
+        $contact = Validator::contact($input['contactNumber'] ?? ($input['phone'] ?? ''));
+        $role = Validator::staffRole($input['role'] ?? '');
+        $dateJoined = date('Y-m-d');
+
+        self::assertIdentityAvailable($username, $email);
+
+        $employeeId = Database::transaction(static function () use (
+            $fullName,
+            $username,
+            $email,
+            $contact,
+            $role,
+            $dateJoined,
+            $actor,
+        ): string {
+            $employeeId = self::nextEmployeeId($role);
+
+            Database::execute(
+                'INSERT INTO employees
+                    (employee_id, username, full_name, email, contact_number, role,
+                     date_joined, status, password_hash, must_change_password, created_by)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?)',
+                [
+                    $employeeId,
+                    $username,
+                    $fullName,
+                    $email,
+                    $contact,
+                    $role,
+                    $dateJoined,
+                    'active',
+                    // No-one knows this random hash. The staff member sets their
+                    // own password through the Forgot password page.
+                    password_hash(bin2hex(random_bytes(32)), PASSWORD_DEFAULT),
+                    (string) ($actor['code'] ?? 'ADMIN-01'),
+                ],
+            );
+
+            return $employeeId;
+        });
+
+        $created = Database::fetchOne('SELECT * FROM employees WHERE employee_id = ? LIMIT 1', [$employeeId]);
+        $mapped = Users::mapEmployee($created);
+
+        Auth::audit(
+            $actor,
+            'Employee Account Created',
+            "{$fullName} ({$employeeId}) created as {$mapped['roleLabel']} and set to Active.",
+            $employeeId,
+        );
+
+        $notification = StaffActivationService::sendAccountReady((int) $created['id'], $actor);
+
+        $fresh = Database::fetchOne('SELECT * FROM employees WHERE id = ? LIMIT 1', [(int) $created['id']]);
+
+        return [
+            'account' => Users::mapEmployee($fresh),
+            'notification' => $notification,
+        ];
+    }
+
+    public static function updateEmployee(int $id, array $input, array $actor): array
+    {
+        $current = self::findEmployee($id);
+        $fullName = Validator::text($input['fullName'] ?? '', 'Full name', 1, 160);
+        $username = Validator::username($input['username'] ?? '');
+        $email = Validator::email($input['email'] ?? '', true);
+        $role = Validator::staffRole($input['role'] ?? '');
+        $contact = Validator::contact($input['contactNumber'] ?? ($input['phone'] ?? ($current['contact_number'] ?? '')));
+        // A pending invitation can only be activated through its emailed link.
+        $status = ($current['status'] ?? '') === 'pending'
+            ? 'pending'
+            : Validator::status($input['status'] ?? ($current['status'] ?? 'active'));
+
+        self::assertIdentityAvailable($username, $email, $id);
+
+        Database::execute(
+            'UPDATE employees
+             SET full_name = ?, username = ?, email = ?, contact_number = ?, role = ?, status = ?
+             WHERE id = ?',
+            [$fullName, $username, $email, $contact, $role, $status, $id],
+        );
+
+        if ($status === 'inactive' && $current['status'] === 'active') {
+            Auth::invalidateSessions('employee', $id);
+        }
+
+        $updated = Database::fetchOne('SELECT * FROM employees WHERE id = ? LIMIT 1', [$id]);
+        $mapped = Users::mapEmployee($updated);
+        Auth::audit(
+            $actor,
+            'Employee Account Updated',
+            "{$fullName} ({$updated['employee_id']}) updated - {$mapped['roleLabel']}, {$status}.",
+            (string) $updated['employee_id'],
+        );
+
+        return $mapped;
+    }
+
+    public static function setStatus(int $id, string $status, array $actor): array
+    {
+        $current = self::findEmployee($id);
+        $status = Validator::status($status);
+
+        if (($current['status'] ?? '') === 'pending') {
+            throw new HttpException(
+                'This account is waiting for email activation. Resend the activation link instead.',
+                409,
+                'NOT_PENDING',
+            );
+        }
+
+        if ($current['status'] === $status) {
+            return Users::mapEmployee($current);
+        }
+
+        Database::execute('UPDATE employees SET status = ? WHERE id = ?', [$status, $id]);
+
+        if ($status === 'inactive') {
+            Auth::invalidateSessions('employee', $id);
+        }
+
+        $updated = Database::fetchOne('SELECT * FROM employees WHERE id = ? LIMIT 1', [$id]);
+        Auth::audit(
+            $actor,
+            $status === 'active' ? 'Employee Account Reactivated' : 'Employee Account Deactivated',
+            "{$updated['full_name']} ({$updated['employee_id']}) was " .
+                ($status === 'active' ? 'reactivated' : 'deactivated') . '.',
+            (string) $updated['employee_id'],
+        );
+
+        return Users::mapEmployee($updated);
+    }
+
+    /**
+     * Delete a staff account without losing its information.
+     *
+     * The employee row is kept as an archived backup (personal details, role,
+     * shift, joined date, last activity, audit history) and access is revoked
+     * immediately. Sales and attendance keep referencing the same record.
+     */
+    public static function archiveEmployee(int $id, array $actor): array
+    {
+        $current = self::findEmployee($id);
+
+        Database::transaction(static function () use ($id, $actor): void {
+            Database::execute(
+                'UPDATE employees
+                 SET deleted_at = NOW(), deleted_by = ?, status = ?
+                 WHERE id = ?',
+                [self::actorLabel($actor), 'inactive', $id],
+            );
+
+            Database::execute(
+                'UPDATE account_activation_tokens SET used_at = NOW()
+                 WHERE employee_id = ? AND used_at IS NULL',
+                [$id],
+            );
+        });
+
+        Auth::invalidateSessions('employee', $id);
+
+        Auth::audit(
+            $actor,
+            'Employee Account Deleted',
+            "{$current['full_name']} ({$current['employee_id']}) was moved to Archived staff. "
+                . 'All details and linked records were kept as a backup.',
+            (string) $current['employee_id'],
+        );
+
+        $archived = Database::fetchOne('SELECT * FROM employees WHERE id = ? LIMIT 1', [$id]);
+        return Users::mapEmployee($archived ?? $current);
+    }
+
+    /** Bring a deleted staff record back into the team directory. */
+    public static function restoreEmployee(int $id, array $actor): array
+    {
+        $row = Database::fetchOne(
+            'SELECT * FROM employees WHERE id = ? AND deleted_at IS NOT NULL LIMIT 1',
+            [$id],
+        );
+        if (!$row) {
+            throw new HttpException('That staff record is not in the archive.', 404, 'NOT_FOUND');
+        }
+        if (!in_array((string) $row['role'], Validator::STAFF_ROLES, true)) {
+            throw new HttpException('Administrator accounts are not managed from User Management.', 400, 'VALIDATION');
+        }
+
+        Database::execute(
+            'UPDATE employees SET deleted_at = NULL, deleted_by = NULL WHERE id = ?',
+            [$id],
+        );
+
+        Auth::audit(
+            $actor,
+            'Employee Account Restored',
+            "{$row['full_name']} ({$row['employee_id']}) was restored from Archived staff and stays inactive until an Admin activates it.",
+            (string) $row['employee_id'],
+        );
+
+        $restored = Database::fetchOne('SELECT * FROM employees WHERE id = ? LIMIT 1', [$id]);
+        return Users::mapEmployee($restored ?? $row);
+    }
+
+    private static function actorLabel(array $actor): string
+    {
+        $label = trim((string) ($actor['name'] ?? $actor['fullName'] ?? ''));
+        if ($label === '') {
+            $label = 'Administrator';
+        }
+        return mb_substr($label, 0, 160);
+    }
+
+    /**
+     * Generate a one-time temporary password, expire it after 24 hours and
+     * invalidate every existing session for that account.
+     *
+     * @return array{password: string, account: array, expiresAt: string}
+     */
+    public static function resetEmployeePassword(int $id, array $actor): array
+    {
+        $current = self::findEmployee($id);
+        $temporary = Validator::temporaryPassword();
+        $expiresAt = date('Y-m-d H:i:s', time() + 24 * 60 * 60);
+
+        Database::execute(
+            'UPDATE employees
+             SET password_hash = ?, must_change_password = 1, temp_password_expires_at = ?,
+                 password_changed_at = NULL, failed_login_count = 0, locked_until = NULL
+             WHERE id = ?',
+            [password_hash($temporary, PASSWORD_DEFAULT), $expiresAt, $id],
+        );
+
+        Auth::invalidateSessions('employee', $id);
+
+        Auth::audit(
+            $actor,
+            'Employee Password Reset',
+            "{$current['full_name']} ({$current['employee_id']}) received a temporary password valid for 24 hours.",
+            (string) $current['employee_id'],
+        );
+
+        $fresh = Database::fetchOne('SELECT * FROM employees WHERE id = ? LIMIT 1', [$id]);
+        return [
+            'password' => $temporary,
+            'account' => Users::mapEmployee($fresh),
+            'expiresAt' => $expiresAt,
+        ];
+    }
+
+    /** Change the signed-in account's own password. */
+    public static function changeOwnPassword(
+        array $user,
+        string $currentPassword,
+        string $newPassword,
+        string $confirmPassword,
+    ): array {
+        if ($currentPassword === '') {
+            throw new HttpException('Enter your current password.', 422, 'VALIDATION');
+        }
+        $newPassword = Validator::password($newPassword, 'New password');
+        if ($newPassword !== $confirmPassword) {
+            throw new HttpException('The new password confirmation does not match.', 422, 'VALIDATION');
+        }
+
+        $table = $user['type'] === 'admin' ? 'admin' : 'employees';
+        $id = (int) $user['id'];
+        $row = Database::fetchOne("SELECT * FROM {$table} WHERE id = ? LIMIT 1", [$id]);
+        if (!$row || !password_verify($currentPassword, (string) $row['password_hash'])) {
+            throw new HttpException('Your current password is incorrect.', 400, 'BAD_PASSWORD');
+        }
+        if (password_verify($newPassword, (string) $row['password_hash'])) {
+            throw new HttpException('Choose a password that is different from your current password.', 422, 'VALIDATION');
+        }
+
+        Database::execute(
+            "UPDATE {$table}
+             SET password_hash = ?, must_change_password = 0, temp_password_expires_at = NULL,
+                 password_changed_at = NOW(), failed_login_count = 0, locked_until = NULL
+             WHERE id = ?",
+            [password_hash($newPassword, PASSWORD_DEFAULT), $id],
+        );
+
+        // Revoke other devices but keep this session signed in.
+        Auth::invalidateSessions($user['type'], $id, true);
+
+        Auth::audit(
+            $user,
+            'Password Changed',
+            ($user['type'] === 'admin' ? 'Administrator' : 'Employee') . ' changed their own password.',
+            (string) ($user['employeeId'] ?? 'ADMIN-01'),
+        );
+
+        $fresh = Database::fetchOne("SELECT * FROM {$table} WHERE id = ? LIMIT 1", [$id]);
+        return $user['type'] === 'admin' ? Users::mapAdmin($fresh) : Users::mapEmployee($fresh);
+    }
+
+    public static function assertIdentityAvailable(string $username, string $email, ?int $exceptEmployeeId = null): void
+    {
+        $admin = Database::fetchOne(
+            'SELECT id, username, email FROM admin WHERE username = ? OR email = ? LIMIT 1',
+            [$username, $email],
+        );
+        if ($admin) {
+            if (strcasecmp((string) $admin['username'], $username) === 0) {
+                throw new HttpException('That username is already in use.', 409, 'CONFLICT');
+            }
+            throw new HttpException('That email address is already in use.', 409, 'CONFLICT');
+        }
+
+        $params = [$username, $email];
+        $sql = 'SELECT id, username, email, deleted_at FROM employees WHERE (username = ? OR email = ?)';
+        if ($exceptEmployeeId !== null) {
+            $sql .= ' AND id <> ?';
+            $params[] = $exceptEmployeeId;
+        }
+        $sql .= ' LIMIT 1';
+
+        $employee = Database::fetchOne($sql, $params);
+        if ($employee) {
+            $archived = !empty($employee['deleted_at']);
+            if (strcasecmp((string) $employee['username'], $username) === 0) {
+                throw new HttpException(
+                    $archived
+                        ? 'That username belongs to an archived staff record. Restore it from Archived staff instead.'
+                        : 'That username is already in use.',
+                    409,
+                    $archived ? 'ARCHIVED' : 'CONFLICT',
+                );
+            }
+            throw new HttpException(
+                $archived
+                    ? 'That email address belongs to an archived staff record. Restore it from Archived staff instead.'
+                    : 'That email address is already in use.',
+                409,
+                $archived ? 'ARCHIVED' : 'CONFLICT',
+            );
+        }
+    }
+
+    private static function nextEmployeeId(string $role): string
+    {
+        $prefix = $role === 'inventory-staff' ? 'INV' : 'CST';
+        $rows = Database::fetchAll(
+            'SELECT employee_id FROM employees WHERE employee_id LIKE ?',
+            [$prefix . '-%'],
+        );
+
+        $highest = 0;
+        foreach ($rows as $row) {
+            if (preg_match('/^' . preg_quote($prefix, '/') . '-(\d+)$/', (string) $row['employee_id'], $match)) {
+                $highest = max($highest, (int) $match[1]);
+            }
+        }
+
+        return $prefix . '-' . str_pad((string) ($highest + 1), 3, '0', STR_PAD_LEFT);
+    }
+
+    private static function insertRecoveryCode(string $ip): string
+    {
+        $alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+        $groups = [];
+        for ($group = 0; $group < 4; $group++) {
+            $chunk = '';
+            for ($index = 0; $index < 4; $index++) {
+                $chunk .= $alphabet[random_int(0, strlen($alphabet) - 1)];
+            }
+            $groups[] = $chunk;
+        }
+        $code = 'GQ-' . implode('-', $groups);
+
+        Database::execute(
+            'INSERT INTO admin_recovery_codes (admin_id, code_hash, created_ip) VALUES (1, ?, ?)',
+            [hash('sha256', $code), substr($ip, 0, 45)],
+        );
+
+        return $code;
+    }
+}
